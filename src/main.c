@@ -8,9 +8,7 @@
 
 typedef uint8_t u8;
 typedef uint32_t u32;
-typedef struct {
-    u32 a, b, c, d;
-} bitset128;
+typedef u32 bitset128[4];
 typedef int8_t i8;
 typedef size_t usize;
 typedef ssize_t ussize;
@@ -22,27 +20,27 @@ typedef ssize_t ussize;
 #define BITSET128_SET(bset, n)                                                 \
     do {                                                                       \
         if ((n) < 32) {                                                        \
-            (bset).d |= (1 << (n));                                            \
+            (bset)[3] |= (1 << (n));                                           \
         } else if ((n) < 64) {                                                 \
-            (bset).c |= (1 << ((n) - 32));                                     \
+            (bset)[2] |= (1 << ((n) - 32));                                    \
         } else if ((n) < 96) {                                                 \
-            (bset).b |= (1 << ((n) - 64));                                     \
+            (bset)[1] |= (1 << ((n) - 64));                                    \
         } else {                                                               \
-            (bset).a |= (1 << ((n) - 96));                                     \
+            (bset)[0] |= (1 << ((n) - 96));                                    \
         }                                                                      \
     } while (0)
 #define BITSET128_GET(bset, n)                                                 \
-    ((n) < 32     ? (bset).d & (1 << (n)) :                                    \
-         (n) < 64 ? (bset).c & (1 << ((n) - 32)) :                             \
-         (n) < 96 ? (bset).b & (1 << ((n) - 64)) :                             \
-                    (bset).a & (1 << ((n) - 96)))
-#define BITSET128_ANY(bset) ((bset).d || (bset).c || (bset).b || (bset).a)
+    ((n) < 32     ? (bset)[3] & (1 << (n)) :                                   \
+         (n) < 64 ? (bset)[2] & (1 << ((n) - 32)) :                            \
+         (n) < 96 ? (bset)[1] & (1 << ((n) - 64)) :                            \
+                    (bset)[0] & (1 << ((n) - 96)))
+#define BITSET128_ANY(bset) ((bset)[3] || (bset)[2] || (bset)[1] || (bset)[0])
 #define BITSET128_CLEAR(bset)                                                  \
     do {                                                                       \
-        (bset).d = 0;                                                          \
-        (bset).c = 0;                                                          \
-        (bset).b = 0;                                                          \
-        (bset).a = 0;                                                          \
+        (bset)[3] = 0;                                                         \
+        (bset)[2] = 0;                                                         \
+        (bset)[1] = 0;                                                         \
+        (bset)[0] = 0;                                                         \
     } while (0)
 
 #define MAX_VALUE           9
