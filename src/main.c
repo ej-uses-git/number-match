@@ -19,6 +19,32 @@ typedef ssize_t ussize;
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ABS(n)    ((n) < 0 ? -(n) : (n))
 
+#define BITSET128_SET(bset, n)                                                 \
+    do {                                                                       \
+        if ((n) < 32) {                                                        \
+            (bset).d |= (1 << (n));                                            \
+        } else if ((n) < 64) {                                                 \
+            (bset).c |= (1 << ((n) - 32));                                     \
+        } else if ((n) < 96) {                                                 \
+            (bset).b |= (1 << ((n) - 64));                                     \
+        } else {                                                               \
+            (bset).a |= (1 << ((n) - 96));                                     \
+        }                                                                      \
+    } while (0)
+#define BITSET128_GET(bset, n)                                                 \
+    ((n) < 32     ? (bset).d & (1 << (n)) :                                    \
+         (n) < 64 ? (bset).c & (1 << ((n) - 32)) :                             \
+         (n) < 96 ? (bset).b & (1 << ((n) - 64)) :                             \
+                    (bset).a & (1 << ((n) - 96)))
+#define BITSET128_ANY(bset) ((bset).d || (bset).c || (bset).b || (bset).a)
+#define BITSET128_CLEAR(bset)                                                  \
+    do {                                                                       \
+        (bset).d = 0;                                                          \
+        (bset).c = 0;                                                          \
+        (bset).b = 0;                                                          \
+        (bset).a = 0;                                                          \
+    } while (0)
+
 #define MAX_VALUE           9
 #define JOINED_VALUE        10
 #define ROW_LENGTH          9
@@ -50,40 +76,9 @@ static usize selectedIndex = NO_INDEX;
 static_assert(BOARD_SIZE < 128, "No room for board indexes in 128 bit bitset");
 static bitset128 blocking = {0};
 
-#define BITSET128_SET(bset, n)                                                 \
-    do {                                                                       \
-        if ((n) < 32) {                                                        \
-            (bset).d |= (1 << (n));                                            \
-        } else if ((n) < 64) {                                                 \
-            (bset).c |= (1 << ((n) - 32));                                     \
-        } else if ((n) < 96) {                                                 \
-            (bset).b |= (1 << ((n) - 64));                                     \
-        } else {                                                               \
-            (bset).a |= (1 << ((n) - 96));                                     \
-        }                                                                      \
-    } while (0)
-#define BITSET128_GET(bset, n)                                                 \
-    ((n) < 32     ? (bset).d & (1 << (n)) :                                    \
-         (n) < 64 ? (bset).c & (1 << ((n) - 32)) :                             \
-         (n) < 96 ? (bset).b & (1 << ((n) - 64)) :                             \
-                    (bset).a & (1 << ((n) - 96)))
-#define BITSET128_ANY(bset) ((bset).d || (bset).c || (bset).b || (bset).a)
-#define BITSET128_CLEAR(bset)                                                  \
-    do {                                                                       \
-        (bset).d = 0;                                                          \
-        (bset).c = 0;                                                          \
-        (bset).b = 0;                                                          \
-        (bset).a = 0;                                                          \
-    } while (0)
+#define BLOCKING_ANIMATION_FRAMES 120
 
 static usize blockingAnimationFrame = 0;
-const usize MAX_BLOCKING_ANIMATION_FRAMES = 120;
-
-typedef enum {
-    MATCH,
-    NO_MATCH,
-    MATCH_BLOCKED,
-} MatchKind;
 
 static char *GetNumberText(i8 n);
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse);
@@ -123,7 +118,7 @@ int main(int argc, const char **argv) {
             ClearBackground(BLACK);
 
             if (BITSET128_ANY(blocking)) {
-                if (blockingAnimationFrame < MAX_BLOCKING_ANIMATION_FRAMES) {
+                if (blockingAnimationFrame < BLOCKING_ANIMATION_FRAMES) {
                     blockingAnimationFrame++;
                 } else {
                     blockingAnimationFrame = 0;
@@ -212,7 +207,7 @@ static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
     usize x = INITIAL_X + col * (SLOT_WIDTH + (col == 0 ? 0 : SLOT_GAP));
 
     if (BITSET128_GET(blocking, index)) {
-        usize middle = MAX_BLOCKING_ANIMATION_FRAMES / 2;
+        usize middle = BLOCKING_ANIMATION_FRAMES / 2;
         x += (blockingAnimationFrame < middle ? 1 : -1) * 10;
     }
 
