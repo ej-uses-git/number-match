@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <raylib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -5,6 +6,10 @@
 #include <time.h>
 
 typedef uint8_t u8;
+typedef uint64_t u64;
+typedef struct {
+    u64 a, b;
+} u128;
 typedef int8_t i8;
 typedef size_t usize;
 typedef ssize_t ussize;
@@ -16,7 +21,7 @@ typedef ssize_t ussize;
 #define MAX_VALUE           9
 #define JOINED_VALUE        10
 #define ROW_LENGTH          9
-#define MAX_ROW             15
+#define MAX_ROW             14
 #define BOARD_SIZE          (ROW_LENGTH * MAX_ROW)
 #define NO_INDEX            BOARD_SIZE
 #define WINDOW_RATIO_WIDTH  9
@@ -38,20 +43,48 @@ typedef ssize_t ussize;
 const int MID_X = SLOT_WIDTH / 2;
 const int MID_Y = SLOT_HEIGHT / 2;
 
-static i8 BOARD[BOARD_SIZE] = {0};
+static i8 board[BOARD_SIZE] = {0};
 static usize lastIndex = 0;
 static usize selectedIndex = NO_INDEX;
+static_assert(BOARD_SIZE < 128, "No room for board indexes in 128 bit bitset");
+static u128 blocking = {0};
+
+#define BITSET128_SET(bset, n)                                                 \
+    do {                                                                       \
+        if ((n) < 64) {                                                        \
+            (bset).b |= (1 << (n));                                            \
+        } else {                                                               \
+            (bset).a |= (1 << ((n) - 64));                                     \
+        }                                                                      \
+    } while (0)
+#define BITSET128_GET(bset, n)                                                 \
+    ((n) < 64 ? (bset).b & (1 << (n)) : (bset).a & (1 << ((n) - 64)))
+#define BITSET128_ANY(bset) ((bset).a || (bset).b)
+#define BITSET128_CLEAR(bset)                                                  \
+    do {                                                                       \
+        (bset).a = 0;                                                          \
+        (bset).b = 0;                                                          \
+    } while (0)
+
+static usize blockingAnimationFrame = 0;
+const usize MAX_BLOCKING_ANIMATION_FRAMES = 120;
+
+typedef enum {
+    MATCH,
+    NO_MATCH,
+    MATCH_BLOCKED,
+} MatchKind;
 
 static char *GetNumberText(i8 n);
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse);
-static bool CanMatch(usize index, i8 n, usize col, usize row);
+static bool CanMatch(usize index, usize col, usize row);
 
 int main(void) {
     srand(time(NULL));
 
-    lastIndex = 20;
+    lastIndex = 30;
     for (usize i = 0; i <= lastIndex; i++) {
-        BOARD[i] = (((u8)rand()) % MAX_VALUE) + 1;
+        board[i] = (((u8)rand()) % MAX_VALUE) + 1;
     }
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Hello, Raylib!");
@@ -63,6 +96,15 @@ int main(void) {
         BeginDrawing();
         {
             ClearBackground(BLACK);
+
+            if (BITSET128_ANY(blocking)) {
+                if (blockingAnimationFrame < MAX_BLOCKING_ANIMATION_FRAMES) {
+                    blockingAnimationFrame++;
+                } else {
+                    blockingAnimationFrame = 0;
+                    BITSET128_CLEAR(blocking);
+                }
+            }
 
             Vector2 mouse = GetMousePosition();
 
@@ -96,9 +138,8 @@ static char *GetNumberText(i8 n) {
     }
 }
 
-static bool CanMatch(usize index, i8 n, usize col, usize row) {
-    i8 selected = BOARD[selectedIndex];
-    if (selected != n && selected + n != JOINED_VALUE) return false;
+static bool CanMatch(usize index, usize row, usize col) {
+    BITSET128_CLEAR(blocking);
 
     usize selectedRow = ROW_FROM_INDEX(selectedIndex);
     usize selectedCol = COL_FROM_INDEX(selectedIndex);
@@ -106,21 +147,18 @@ static bool CanMatch(usize index, i8 n, usize col, usize row) {
         usize startRow = MIN(row, selectedRow);
         usize endRow = MAX(row, selectedRow);
         for (usize i = startRow + 1; i < endRow; i++) {
-            if (BOARD[INDEX_FROM_POS(i, col)] > 0) return false;
+            usize currentIndex = INDEX_FROM_POS(i, col);
+            if (board[currentIndex] > 0) BITSET128_SET(blocking, currentIndex);
         }
-        return true;
+        return !BITSET128_ANY(blocking);
     }
 
     usize start = MIN(index, selectedIndex);
     usize end = MAX(index, selectedIndex);
-    bool canMatch = true;
     for (usize i = start + 1; i < end; i++) {
-        if (BOARD[i] > 0) {
-            canMatch = false;
-            break;
-        }
+        if (board[i] > 0) BITSET128_SET(blocking, i);
     }
-    if (canMatch) return true;
+    if (!BITSET128_ANY(blocking)) return true;
 
     usize startRow = ROW_FROM_INDEX(start);
     usize startCol = COL_FROM_INDEX(start);
@@ -131,20 +169,30 @@ static bool CanMatch(usize index, i8 n, usize col, usize row) {
         (startCol - startRow) == (endCol - endRow);
     if (!isDiagonal) return false;
 
+    BITSET128_CLEAR(blocking);
+
     i8 direction = startCol > endCol ? -1 : 1;
     i8 offset = direction;
     for (usize i = startRow + 1; i < endRow; i++, offset += direction) {
-        if (BOARD[INDEX_FROM_POS(i, startCol + offset)] > 0) return false;
+        usize currentIndex = INDEX_FROM_POS(i, startCol + offset);
+        if (board[currentIndex] > 0) BITSET128_SET(blocking, currentIndex);
     }
-    return true;
+    return !BITSET128_ANY(blocking);
 }
 
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
     usize index = INDEX_FROM_POS(row, col);
-    i8 n = BOARD[index];
+    i8 n = board[index];
 
     usize x = INITIAL_X + col * (SLOT_WIDTH + (col == 0 ? 0 : SLOT_GAP));
+
+    if (BITSET128_GET(blocking, index)) {
+        usize middle = MAX_BLOCKING_ANIMATION_FRAMES / 2;
+        x += (blockingAnimationFrame < middle ? 1 : -1) * 10;
+    }
+
     usize y = INITIAL_Y + row * (SLOT_HEIGHT + (row == 0 ? 0 : SLOT_GAP));
+
     Rectangle bounds = {x, y, SLOT_WIDTH, SLOT_HEIGHT};
 
     DrawRectangleRec(bounds, index == selectedIndex ? SKYBLUE : WHITE);
@@ -154,6 +202,8 @@ static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
                  y + MID_Y - (measure.y / 2), FONT_SIZE,
                  n < 0 ? LIGHTGRAY : BLACK);
 
+        if (BITSET128_ANY(blocking)) return;
+
         if (n > 0 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
             CheckCollisionPointRec(mouse, bounds)) {
             if (selectedIndex == NO_INDEX) {
@@ -161,18 +211,13 @@ static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
             } else if (selectedIndex == index) {
                 selectedIndex = NO_INDEX;
             } else {
-                i8 selected = BOARD[selectedIndex];
-                if (CanMatch(index, n, row, col)) {
-                    BOARD[index] = -n;
-                    BOARD[selectedIndex] = -selected;
+                i8 selected = board[selectedIndex];
+                if (selected != n && selected + n != JOINED_VALUE) {
+                    selectedIndex = index;
+                } else if (CanMatch(index, row, col)) {
+                    board[index] = -n;
+                    board[selectedIndex] = -selected;
                     selectedIndex = NO_INDEX;
-                } else {
-                    TraceLog(LOG_ERROR, "Cannot match these two");
-                    TraceLog(LOG_ERROR, "(%d, %d) = %d", row, col, n);
-                    TraceLog(LOG_ERROR, "(%d, %d) = %d",
-                             ROW_FROM_INDEX(selectedIndex),
-                             COL_FROM_INDEX(selectedIndex), selected);
-                    // TODO: report error
                 }
             }
         }
