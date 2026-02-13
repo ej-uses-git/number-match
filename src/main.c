@@ -7,10 +7,10 @@
 #include <time.h>
 
 typedef uint8_t u8;
-typedef uint64_t u64;
+typedef uint32_t u32;
 typedef struct {
-    u64 a, b;
-} u128;
+    u32 a, b, c, d;
+} bitset128;
 typedef int8_t i8;
 typedef size_t usize;
 typedef ssize_t ussize;
@@ -48,23 +48,32 @@ static i8 board[BOARD_SIZE] = {0};
 static usize lastIndex = 0;
 static usize selectedIndex = NO_INDEX;
 static_assert(BOARD_SIZE < 128, "No room for board indexes in 128 bit bitset");
-static u128 blocking = {0};
+static bitset128 blocking = {0};
 
 #define BITSET128_SET(bset, n)                                                 \
     do {                                                                       \
-        if ((n) < 64) {                                                        \
-            (bset).b |= (1 << (n));                                            \
+        if ((n) < 32) {                                                        \
+            (bset).d |= (1 << (n));                                            \
+        } else if ((n) < 64) {                                                 \
+            (bset).c |= (1 << ((n) - 32));                                     \
+        } else if ((n) < 96) {                                                 \
+            (bset).b |= (1 << ((n) - 64));                                     \
         } else {                                                               \
-            (bset).a |= (1 << ((n) - 64));                                     \
+            (bset).a |= (1 << ((n) - 96));                                     \
         }                                                                      \
     } while (0)
 #define BITSET128_GET(bset, n)                                                 \
-    ((n) < 64 ? (bset).b & (1 << (n)) : (bset).a & (1 << ((n) - 64)))
-#define BITSET128_ANY(bset) ((bset).a || (bset).b)
+    ((n) < 32     ? (bset).d & (1 << (n)) :                                    \
+         (n) < 64 ? (bset).c & (1 << ((n) - 32)) :                             \
+         (n) < 96 ? (bset).b & (1 << ((n) - 64)) :                             \
+                    (bset).a & (1 << ((n) - 96)))
+#define BITSET128_ANY(bset) ((bset).d || (bset).c || (bset).b || (bset).a)
 #define BITSET128_CLEAR(bset)                                                  \
     do {                                                                       \
-        (bset).a = 0;                                                          \
+        (bset).d = 0;                                                          \
+        (bset).c = 0;                                                          \
         (bset).b = 0;                                                          \
+        (bset).a = 0;                                                          \
     } while (0)
 
 static usize blockingAnimationFrame = 0;
