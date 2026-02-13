@@ -44,6 +44,7 @@ static usize selectedIndex = NO_INDEX;
 
 static char *GetNumberText(i8 n);
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse);
+static bool CanMatch(usize index, i8 n, usize col, usize row);
 
 int main(void) {
     srand(time(NULL));
@@ -95,6 +96,49 @@ static char *GetNumberText(i8 n) {
     }
 }
 
+static bool CanMatch(usize index, i8 n, usize col, usize row) {
+    i8 selected = BOARD[selectedIndex];
+    if (selected != n && selected + n != JOINED_VALUE) return false;
+
+    usize selectedRow = ROW_FROM_INDEX(selectedIndex);
+    usize selectedCol = COL_FROM_INDEX(selectedIndex);
+    if (col == selectedCol) {
+        usize startRow = MIN(row, selectedRow);
+        usize endRow = MAX(row, selectedRow);
+        for (usize i = startRow + 1; i < endRow; i++) {
+            if (BOARD[INDEX_FROM_POS(i, col)] > 0) return false;
+        }
+        return true;
+    }
+
+    usize start = MIN(index, selectedIndex);
+    usize end = MAX(index, selectedIndex);
+    bool canMatch = true;
+    for (usize i = start + 1; i < end; i++) {
+        if (BOARD[i] > 0) {
+            canMatch = false;
+            break;
+        }
+    }
+    if (canMatch) return true;
+
+    usize startRow = ROW_FROM_INDEX(start);
+    usize startCol = COL_FROM_INDEX(start);
+    usize endRow = ROW_FROM_INDEX(end);
+    usize endCol = COL_FROM_INDEX(end);
+
+    bool isDiagonal = (startCol + startRow) == (endCol + endRow) ||
+        (startCol - startRow) == (endCol - endRow);
+    if (!isDiagonal) return false;
+
+    i8 direction = startCol > endCol ? -1 : 1;
+    i8 offset = direction;
+    for (usize i = startRow + 1; i < endRow; i++, offset += direction) {
+        if (BOARD[INDEX_FROM_POS(i, startCol + offset)] > 0) return false;
+    }
+    return true;
+}
+
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
     usize index = INDEX_FROM_POS(row, col);
     i8 n = BOARD[index];
@@ -118,49 +162,18 @@ static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
                 selectedIndex = NO_INDEX;
             } else {
                 i8 selected = BOARD[selectedIndex];
-                if (selected != n && selected + n != JOINED_VALUE) {
-                    TraceLog(LOG_ERROR, "Cannot match these two");
-                    TraceLog(LOG_ERROR, "selected = %d", selected);
-                    TraceLog(LOG_ERROR, "n = %d", n);
-                    // TODO: report error
-                    return;
-                }
-
-                usize selectedRow = ROW_FROM_INDEX(selectedIndex);
-                usize selectedCol = COL_FROM_INDEX(selectedIndex);
-                bool canMatch = true;
-                if (col == selectedCol) {
-                    usize startRow = MIN(row, selectedRow);
-                    usize endRow = MAX(row, selectedRow);
-                    for (usize i = startRow + 1; i < endRow; i++) {
-                        if (BOARD[INDEX_FROM_POS(i, col)]) {
-                            canMatch = false;
-                            break;
-                        }
-                    }
+                if (CanMatch(index, n, row, col)) {
+                    BOARD[index] = -n;
+                    BOARD[selectedIndex] = -selected;
+                    selectedIndex = NO_INDEX;
                 } else {
-                    usize start = MIN(index, selectedIndex);
-                    usize end = MAX(index, selectedIndex);
-                    for (usize i = start + 1; i < end; i++) {
-                        if (BOARD[i]) {
-                            canMatch = false;
-                            break;
-                        }
-                    }
-                }
-                // TODO: support diagonal
-
-                if (!canMatch) {
                     TraceLog(LOG_ERROR, "Cannot match these two");
-                    TraceLog(LOG_ERROR, "selectedIndex = %d", selectedIndex);
-                    TraceLog(LOG_ERROR, "index = %d", index);
+                    TraceLog(LOG_ERROR, "(%d, %d) = %d", row, col, n);
+                    TraceLog(LOG_ERROR, "(%d, %d) = %d",
+                             ROW_FROM_INDEX(selectedIndex),
+                             COL_FROM_INDEX(selectedIndex), selected);
                     // TODO: report error
-                    return;
                 }
-
-                BOARD[index] = -n;
-                BOARD[selectedIndex] = -selected;
-                selectedIndex = NO_INDEX;
             }
         }
     }
