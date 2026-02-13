@@ -1,0 +1,23 @@
+TabWidth: 4
+IndentWidth: 4
+UseTab: Never
+Language: Cpp
+Standard: Cpp11
+PointerAlignment: Right
+AlignAfterOpenBracket: true
+AlignOperands: false
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+BreakBeforeBraces: Attach
+BreakBeforeTernaryOperators: false
+ColumnLimit: 80
+AlignConsecutiveMacros: true
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+IndentCaseLabels: false
+SpaceAfterCStyleCast: false
+# ForEachMacros:
