@@ -19,28 +19,18 @@ typedef ssize_t ussize;
 
 #define BITSET128_SET(bset, n)                                                 \
     do {                                                                       \
-        if ((n) < 32) {                                                        \
-            (bset)[3] |= (1 << (n));                                           \
-        } else if ((n) < 64) {                                                 \
-            (bset)[2] |= (1 << ((n) - 32));                                    \
-        } else if ((n) < 96) {                                                 \
-            (bset)[1] |= (1 << ((n) - 64));                                    \
-        } else {                                                               \
-            (bset)[0] |= (1 << ((n) - 96));                                    \
-        }                                                                      \
+        usize index = (n) / 32;                                                \
+        (bset)[index] |= (1 << ((n) - (32 * index)));                          \
     } while (0)
 #define BITSET128_GET(bset, n)                                                 \
-    ((n) < 32     ? (bset)[3] & (1 << (n)) :                                   \
-         (n) < 64 ? (bset)[2] & (1 << ((n) - 32)) :                            \
-         (n) < 96 ? (bset)[1] & (1 << ((n) - 64)) :                            \
-                    (bset)[0] & (1 << ((n) - 96)))
-#define BITSET128_ANY(bset) ((bset)[3] || (bset)[2] || (bset)[1] || (bset)[0])
+    ((bset)[(n) / 32] & (1 << ((n) - (32 * ((n) / 32)))))
+#define BITSET128_ANY(bset) ((bset)[0] || (bset)[1] || (bset)[2] || (bset)[3])
 #define BITSET128_CLEAR(bset)                                                  \
     do {                                                                       \
-        (bset)[3] = 0;                                                         \
-        (bset)[2] = 0;                                                         \
-        (bset)[1] = 0;                                                         \
         (bset)[0] = 0;                                                         \
+        (bset)[1] = 0;                                                         \
+        (bset)[2] = 0;                                                         \
+        (bset)[3] = 0;                                                         \
     } while (0)
 
 #define MAX_VALUE           9
