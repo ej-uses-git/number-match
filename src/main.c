@@ -47,6 +47,7 @@ typedef ssize_t ussize;
 #define JOINED_VALUE        10
 #define COL_COUNT           9
 #define ROW_COUNT           14
+#define INITIAL_SLOTS       42
 #define BOARD_SIZE          (COL_COUNT * ROW_COUNT)
 #define NO_INDEX            BOARD_SIZE
 #define WINDOW_RATIO_WIDTH  9
@@ -101,7 +102,7 @@ int main(int argc, const char **argv) {
     TraceLog(LOG_INFO, "RANDOM: seed = %#x", seed);
     srand(seed);
 
-    lastIndex = 30;
+    lastIndex = INITIAL_SLOTS - 1;
     for (usize i = 0; i <= lastIndex; i++) {
         board[i] = (((u8)rand()) % MAX_VALUE) + 1;
     }
@@ -127,8 +128,7 @@ int main(int argc, const char **argv) {
 
             Vector2 mouse = GetMousePosition();
 
-            usize lastRow = ROW_FROM_INDEX(lastIndex);
-            for (usize row = 0; row <= lastRow; row++) {
+            for (usize row = 0; row < ROW_COUNT; row++) {
                 for (usize col = 0; col < COL_COUNT; col++) {
                     GuiSlot(row, col, measure, mouse);
                 }
