@@ -50,16 +50,31 @@ typedef size_t usize;
 #define BOARD_WIDTH         ((SLOT_WIDTH * COL_COUNT) + (SLOT_GAP * (COL_COUNT + 1)))
 #define INITIAL_X           ((WINDOW_WIDTH / 2) - (BOARD_WIDTH / 2))
 #define INITIAL_Y           SLOT_GAP
+#define BUTTON_RADIUS       30.0
+#define BADGE_RADIUS        15
+#define PLUS_FONT_SIZE      32
+#define PLUS                "+"
 
+#define RANDOM_VALUE()           (((u8)rand()) % MAX_VALUE) + 1
 #define ROW_FROM_INDEX(index)    ((index) / COL_COUNT)
 #define COL_FROM_INDEX(index)    ((index) % COL_COUNT)
 #define INDEX_FROM_POS(row, col) (((row) * COL_COUNT) + (col))
 
-const int MID_X = SLOT_WIDTH / 2;
-const int MID_Y = SLOT_HEIGHT / 2;
+const int SLOT_MID_X = SLOT_WIDTH / 2;
+const int SLOT_MID_Y = SLOT_HEIGHT / 2;
+const int WINDOW_MID_Y = WINDOW_HEIGHT / 2;
+const int BUTTON_CENTER_X = INITIAL_X / 2;
+const int BADGE_CENTER_X = (BADGE_RADIUS / 2);
 
-Vector2 NUMBER_MEASURES[MAX_VALUE] = {0};
+const Vector2 ADD_SLOTS_BUTTON_CENTER = {BUTTON_CENTER_X, WINDOW_MID_Y};
+const Vector2 BADGE_CENTER = {
+    ADD_SLOTS_BUTTON_CENTER.x + BUTTON_RADIUS - BADGE_CENTER_X,
+    ADD_SLOTS_BUTTON_CENTER.y - BUTTON_RADIUS + BADGE_CENTER_X};
 
+Vector2 NUMBER_MEASURES[MAX_VALUE + 1] = {0};
+Vector2 PLUS_MEASURE = {0};
+
+static u8 adds = 5;
 static i8 board[BOARD_SIZE] = {0};
 static usize lastIndex = 0;
 static usize selectedIndex = NO_INDEX;
@@ -71,9 +86,10 @@ static bitset128 blocking = {0};
 static usize blockingAnimationFrame = 0;
 
 static char *GetNumberText(i8 n);
-static void GuiSlot(usize row, usize col, Vector2 mouse);
 static bool CanMatch(usize index, usize col, usize row);
 static void ClearRowIfNeeded(usize row);
+static void GuiSlot(usize row, usize col, Vector2 mouse);
+static void GuiAddSlotsButton(Vector2 mouse);
 
 int main(int argc, const char **argv) {
     int seed = time(NULL);
@@ -95,16 +111,17 @@ int main(int argc, const char **argv) {
 
     lastIndex = INITIAL_SLOTS - 1;
     for (usize i = 0; i <= lastIndex; i++) {
-        board[i] = (((u8)rand()) % MAX_VALUE) + 1;
+        board[i] = RANDOM_VALUE();
     }
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Number Match");
 
     Font font = GetFontDefault();
-    for (usize i = 0; i < MAX_VALUE; i++) {
+    for (usize i = 0; i < MAX_VALUE + 1; i++) {
         NUMBER_MEASURES[i] =
-            MeasureTextEx(font, GetNumberText(i + 1), FONT_SIZE, 0);
+            MeasureTextEx(font, GetNumberText(i), FONT_SIZE, 0);
     }
+    PLUS_MEASURE = MeasureTextEx(font, PLUS, PLUS_FONT_SIZE, 0);
 
     while (!WindowShouldClose()) {
         BeginDrawing();
@@ -129,7 +146,8 @@ int main(int argc, const char **argv) {
                 }
             }
 
-            // TODO: show button to add more
+            GuiAddSlotsButton(mouse);
+
             // TODO: show hint button
         }
         EndDrawing();
@@ -142,6 +160,7 @@ int main(int argc, const char **argv) {
 
 static char *GetNumberText(i8 n) {
     switch (ABS(n)) {
+    case 0:  return "0";
     case 1:  return "1";
     case 2:  return "2";
     case 3:  return "3";
@@ -206,7 +225,7 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
     // TODO: add animation for making a match
     if (BITSET128_GET(blocking, index)) {
         usize middle = BLOCKING_ANIMATION_FRAMES / 2;
-        x += (blockingAnimationFrame < middle ? 1 : -1) * 10;
+        x += (blockingAnimationFrame < middle ? 1 : -1) * (SLOT_GAP / 2);
     }
 
     usize y = INITIAL_Y + row * (SLOT_HEIGHT + (row == 0 ? 0 : SLOT_GAP));
@@ -216,9 +235,9 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
     DrawRectangleRec(bounds, index == selectedIndex ? SKYBLUE : WHITE);
 
     if (n) {
-        Vector2 measure = NUMBER_MEASURES[n - 1];
-        DrawText(GetNumberText(n), x + MID_X - (measure.x / 2),
-                 y + MID_Y - (measure.y / 2), FONT_SIZE,
+        Vector2 measure = NUMBER_MEASURES[ABS(n)];
+        DrawText(GetNumberText(n), x + SLOT_MID_X - (measure.x / 2),
+                 y + SLOT_MID_Y - (measure.y / 2), FONT_SIZE,
                  n < 0 ? LIGHTGRAY : BLACK);
 
         if (BITSET128_ANY(blocking)) return;
@@ -246,6 +265,35 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
                     selectedIndex = NO_INDEX;
                 }
             }
+        }
+    }
+}
+
+static void GuiAddSlotsButton(Vector2 mouse) {
+    DrawCircleV(ADD_SLOTS_BUTTON_CENTER, BUTTON_RADIUS,
+                !adds ? LIGHTGRAY : WHITE);
+    DrawText(PLUS, ADD_SLOTS_BUTTON_CENTER.x - PLUS_MEASURE.x / 2,
+             ADD_SLOTS_BUTTON_CENTER.y - PLUS_MEASURE.y / 2, PLUS_FONT_SIZE,
+             BLACK);
+    DrawCircleV(BADGE_CENTER, BADGE_RADIUS, !adds ? GRAY : SKYBLUE);
+    Vector2 measure = NUMBER_MEASURES[adds];
+    DrawText(GetNumberText(adds), BADGE_CENTER.x - (measure.x / 2),
+             BADGE_CENTER.y - (measure.y / 2), FONT_SIZE, BLACK);
+
+    if (adds &&
+        CheckCollisionPointCircle(mouse, ADD_SLOTS_BUTTON_CENTER,
+                                  BUTTON_RADIUS) &&
+        IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        adds -= 1;
+
+        usize count = 0;
+        for (usize i = 0; i < lastIndex; i++) {
+            if (board[i] > 0) count++;
+        }
+        usize newSlots = MIN(count, BOARD_SIZE - lastIndex - 1);
+        for (usize i = 0; i < newSlots; i++) {
+            // TODO: only add available values
+            board[++lastIndex] = RANDOM_VALUE();
         }
     }
 }
