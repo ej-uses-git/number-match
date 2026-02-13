@@ -11,7 +11,6 @@ typedef uint32_t u32;
 typedef u32 bitset128[4];
 typedef int8_t i8;
 typedef size_t usize;
-typedef ssize_t ussize;
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -59,10 +58,12 @@ typedef ssize_t ussize;
 const int MID_X = SLOT_WIDTH / 2;
 const int MID_Y = SLOT_HEIGHT / 2;
 
+Vector2 NUMBER_MEASURES[MAX_VALUE] = {0};
+
 static i8 board[BOARD_SIZE] = {0};
 static usize lastIndex = 0;
 static usize selectedIndex = NO_INDEX;
-static_assert(BOARD_SIZE < 128, "No room for board indexes in 128 bit bitset");
+static_assert(BOARD_SIZE <= 128, "board too large for 128 bitset of indexes");
 static bitset128 blocking = {0};
 
 #define BLOCKING_ANIMATION_FRAMES 120
@@ -70,7 +71,7 @@ static bitset128 blocking = {0};
 static usize blockingAnimationFrame = 0;
 
 static char *GetNumberText(i8 n);
-static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse);
+static void GuiSlot(usize row, usize col, Vector2 mouse);
 static bool CanMatch(usize index, usize col, usize row);
 static void ClearRowIfNeeded(usize row);
 
@@ -100,7 +101,10 @@ int main(int argc, const char **argv) {
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Number Match");
 
     Font font = GetFontDefault();
-    Vector2 measure = MeasureTextEx(font, "0", FONT_SIZE, 0);
+    for (usize i = 0; i < MAX_VALUE; i++) {
+        NUMBER_MEASURES[i] =
+            MeasureTextEx(font, GetNumberText(i + 1), FONT_SIZE, 0);
+    }
 
     while (!WindowShouldClose()) {
         BeginDrawing();
@@ -120,9 +124,12 @@ int main(int argc, const char **argv) {
 
             for (usize row = 0; row < ROW_COUNT; row++) {
                 for (usize col = 0; col < COL_COUNT; col++) {
-                    GuiSlot(row, col, measure, mouse);
+                    GuiSlot(row, col, mouse);
                 }
             }
+
+            // TODO: show button to add more
+            // TODO: show hint button
         }
         EndDrawing();
     }
@@ -189,12 +196,13 @@ static bool CanMatch(usize index, usize row, usize col) {
     return !BITSET128_ANY(blocking);
 }
 
-static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
+static void GuiSlot(usize row, usize col, Vector2 mouse) {
     usize index = INDEX_FROM_POS(row, col);
     i8 n = board[index];
 
     usize x = INITIAL_X + col * (SLOT_WIDTH + (col == 0 ? 0 : SLOT_GAP));
 
+    // TODO: add animation for making a match
     if (BITSET128_GET(blocking, index)) {
         usize middle = BLOCKING_ANIMATION_FRAMES / 2;
         x += (blockingAnimationFrame < middle ? 1 : -1) * 10;
@@ -207,6 +215,7 @@ static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
     DrawRectangleRec(bounds, index == selectedIndex ? SKYBLUE : WHITE);
 
     if (n) {
+        Vector2 measure = NUMBER_MEASURES[n - 1];
         DrawText(GetNumberText(n), x + MID_X - (measure.x / 2),
                  y + MID_Y - (measure.y / 2), FONT_SIZE,
                  n < 0 ? LIGHTGRAY : BLACK);
