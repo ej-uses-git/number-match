@@ -47,9 +47,9 @@ typedef ssize_t ussize;
 
 #define MAX_VALUE           9
 #define JOINED_VALUE        10
-#define ROW_LENGTH          9
-#define MAX_ROW             14
-#define BOARD_SIZE          (ROW_LENGTH * MAX_ROW)
+#define COL_COUNT           9
+#define ROW_COUNT           14
+#define BOARD_SIZE          (COL_COUNT * ROW_COUNT)
 #define NO_INDEX            BOARD_SIZE
 #define WINDOW_RATIO_WIDTH  9
 #define WINDOW_RATIO_HEIGHT 16
@@ -59,13 +59,13 @@ typedef ssize_t ussize;
 #define SLOT_HEIGHT         SLOT_WIDTH
 #define SLOT_GAP            10
 #define FONT_SIZE           16
-#define BOARD_WIDTH         ((SLOT_WIDTH * ROW_LENGTH) + (SLOT_GAP * (ROW_LENGTH + 1)))
+#define BOARD_WIDTH         ((SLOT_WIDTH * COL_COUNT) + (SLOT_GAP * (COL_COUNT + 1)))
 #define INITIAL_X           ((WINDOW_WIDTH / 2) - (BOARD_WIDTH / 2))
 #define INITIAL_Y           SLOT_GAP
 
-#define ROW_FROM_INDEX(index)    ((index) / ROW_LENGTH)
-#define COL_FROM_INDEX(index)    ((index) % ROW_LENGTH)
-#define INDEX_FROM_POS(row, col) (((row) * ROW_LENGTH) + (col))
+#define ROW_FROM_INDEX(index)    ((index) / COL_COUNT)
+#define COL_FROM_INDEX(index)    ((index) % COL_COUNT)
+#define INDEX_FROM_POS(row, col) (((row) * COL_COUNT) + (col))
 
 const int MID_X = SLOT_WIDTH / 2;
 const int MID_Y = SLOT_HEIGHT / 2;
@@ -83,6 +83,7 @@ static usize blockingAnimationFrame = 0;
 static char *GetNumberText(i8 n);
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse);
 static bool CanMatch(usize index, usize col, usize row);
+static void ClearRowIfNeeded(usize row);
 
 int main(int argc, const char **argv) {
     int seed = time(NULL);
@@ -130,7 +131,7 @@ int main(int argc, const char **argv) {
 
             usize lastRow = ROW_FROM_INDEX(lastIndex);
             for (usize row = 0; row <= lastRow; row++) {
-                for (usize col = 0; col < ROW_LENGTH; col++) {
+                for (usize col = 0; col < COL_COUNT; col++) {
                     GuiSlot(row, col, measure, mouse);
                 }
             }
@@ -237,9 +238,38 @@ static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse) {
                 } else if (CanMatch(index, row, col)) {
                     board[index] = -n;
                     board[selectedIndex] = -selected;
+
+                    usize selectedRow = ROW_FROM_INDEX(selectedIndex);
+                    usize lastRow = MAX(selectedRow, row);
+                    usize firstRow = MIN(selectedRow, row);
+                    ClearRowIfNeeded(lastRow);
+                    ClearRowIfNeeded(firstRow);
+
                     selectedIndex = NO_INDEX;
                 }
             }
         }
     }
+}
+
+static void ClearRowIfNeeded(usize row) {
+    usize lastRow = ROW_FROM_INDEX(lastIndex);
+
+    if (row == lastRow) return;
+
+    for (usize col = 0; col < COL_COUNT; col++) {
+        if (board[INDEX_FROM_POS(row, col)] > 0) return;
+    }
+
+    for (usize i = row; i <= lastRow; i++) {
+        for (usize col = 0; col < COL_COUNT; col++) {
+            board[INDEX_FROM_POS(i, col)] = board[INDEX_FROM_POS(i + 1, col)];
+        }
+    }
+
+    for (usize col = 0; col < COL_COUNT; col++) {
+        board[INDEX_FROM_POS(lastRow, col)] = 0;
+    }
+
+    lastIndex -= COL_COUNT;
 }
