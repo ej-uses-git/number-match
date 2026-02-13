@@ -6,6 +6,9 @@ ifeq ($(OS),Darwin)
 	CFLAGS+=-framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL
 endif
 CFLAGS+=-L./thirdparty/raylib/src -lraylib
+ifneq ($(BUILD_KIND), RELEASE)
+	CFLAGS+=-g -fsanitize=address
+endif
 
 .PHONY: all
 
