@@ -107,7 +107,7 @@ int main(int argc, const char **argv) {
         board[i] = (((u8)rand()) % MAX_VALUE) + 1;
     }
 
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Hello, Raylib!");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Number Match");
 
     Font font = GetFontDefault();
     Vector2 measure = MeasureTextEx(font, "0", FONT_SIZE, 0);
