@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 typedef uint8_t u8;
@@ -79,8 +80,23 @@ static char *GetNumberText(i8 n);
 static void GuiSlot(usize row, usize col, Vector2 measure, Vector2 mouse);
 static bool CanMatch(usize index, usize col, usize row);
 
-int main(void) {
-    srand(time(NULL));
+int main(int argc, const char **argv) {
+    int seed = time(NULL);
+    if (argc > 1 && strcmp(argv[1], "--seed") == 0) {
+        if (argc < 3) {
+            TraceLog(LOG_ERROR, "missing argument for flag --seed");
+            return 1;
+        }
+
+        char *endptr;
+        seed = strtol(argv[2], &endptr, 0);
+        if (*endptr != '\0') {
+            TraceLog(LOG_ERROR, "invalid number for flag --seed");
+            return 1;
+        }
+    }
+    TraceLog(LOG_INFO, "RANDOM: seed = %#x", seed);
+    srand(seed);
 
     lastIndex = 30;
     for (usize i = 0; i <= lastIndex; i++) {
