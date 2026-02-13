@@ -122,6 +122,7 @@ int main(int argc, const char **argv) {
 
             Vector2 mouse = GetMousePosition();
 
+            // TODO: implement scrolling
             for (usize row = 0; row < ROW_COUNT; row++) {
                 for (usize col = 0; col < COL_COUNT; col++) {
                     GuiSlot(row, col, mouse);
