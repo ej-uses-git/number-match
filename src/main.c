@@ -7,6 +7,7 @@
 #include <time.h>
 
 typedef uint8_t u8;
+typedef uint16_t u16;
 typedef uint32_t u32;
 typedef u32 bitset128[4];
 typedef int8_t i8;
@@ -16,9 +17,29 @@ typedef size_t usize;
 void TraceLog(int logLevel, const char *text, ...)
     __attribute__((format(printf, 2, 3)));
 
+#define UNREACHABLE(message)                                                   \
+    do {                                                                       \
+        fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__,        \
+                message);                                                      \
+        abort();                                                               \
+    } while (0)
+
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ABS(n)    ((n) < 0 ? -(n) : (n))
+
+#if defined(__GNUC__) || defined(__clang__)
+#define BITCOUNT __builtin_popcount
+#else
+static usize CustomBitcount(usize n) {
+    usize result = 0;
+    for (; n; n <<= 1) {
+        if (n & 1) result++;
+    }
+    return result;
+}
+#define BITCOUNT CustomBitcount
+#endif // defined(__GNUC__) || defined(__clang__)
 
 #define BITSET128_SET(bset, n)                                                 \
     do {                                                                       \
@@ -58,8 +79,8 @@ void TraceLog(int logLevel, const char *text, ...)
 #define BADGE_RADIUS        15
 #define PLUS_FONT_SIZE      32
 #define PLUS                "+"
+#define COMPLETED           "-"
 
-#define RANDOM_VALUE()           (((u8)rand()) % MAX_VALUE) + 1
 #define ROW_FROM_INDEX(index)    ((index) / COL_COUNT)
 #define COL_FROM_INDEX(index)    ((index) % COL_COUNT)
 #define INDEX_FROM_POS(row, col) (((row) * COL_COUNT) + (col))
@@ -77,6 +98,7 @@ const Vector2 BADGE_CENTER = {
 
 Vector2 NUMBER_MEASURES[MAX_VALUE + 1] = {0};
 Vector2 PLUS_MEASURE = {0};
+Vector2 COMPLETED_MEASURE = {0};
 
 static u8 adds = 5;
 static i8 board[BOARD_SIZE] = {0};
@@ -84,6 +106,7 @@ static usize lastIndex = 0;
 static usize selectedIndex = NO_INDEX;
 static_assert(BOARD_SIZE <= 128, "board too large for 128 bitset of indexes");
 static bitset128 blocking = {0};
+static u16 completed = 0;
 
 #define BLOCKING_ANIMATION_FRAMES 120
 
@@ -94,6 +117,7 @@ static bool CanMatch(usize index, usize col, usize row);
 static void ClearRowIfNeeded(usize row);
 static void GuiSlot(usize row, usize col, Vector2 mouse);
 static void GuiAddSlotsButton(Vector2 mouse);
+static u8 RandomValue(u8 availableCount);
 
 int main(int argc, const char **argv) {
     int seed = time(NULL);
@@ -114,8 +138,9 @@ int main(int argc, const char **argv) {
     srand(seed);
 
     lastIndex = INITIAL_SLOTS - 1;
+    u8 availableCount = MAX_VALUE - BITCOUNT(completed);
     for (usize i = 0; i <= lastIndex; i++) {
-        board[i] = RANDOM_VALUE();
+        board[i] = RandomValue(availableCount);
     }
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Number Match");
@@ -126,6 +151,7 @@ int main(int argc, const char **argv) {
             MeasureTextEx(font, GetNumberText(i), FONT_SIZE, 0);
     }
     PLUS_MEASURE = MeasureTextEx(font, PLUS, PLUS_FONT_SIZE, 0);
+    COMPLETED_MEASURE = MeasureTextEx(font, COMPLETED, FONT_SIZE, 0);
 
     while (!WindowShouldClose()) {
         BeginDrawing();
@@ -153,6 +179,22 @@ int main(int argc, const char **argv) {
             GuiAddSlotsButton(mouse);
 
             // TODO: show hint button
+
+            for (usize i = 0; i < MAX_VALUE; i++) {
+                i8 n = i + 1;
+                char *text;
+                Vector2 measure;
+                if (completed & (1 << i)) {
+                    text = COMPLETED;
+                    measure = COMPLETED_MEASURE;
+                } else {
+                    text = GetNumberText(n);
+                    measure = NUMBER_MEASURES[n];
+                }
+                int textMidX = (measure.x / 2);
+                DrawText(text, INITIAL_X + BOARD_WIDTH + 10 - textMidX,
+                         WINDOW_MID_Y / 2 + (i * 20), FONT_SIZE, WHITE);
+            }
         }
         EndDrawing();
     }
@@ -260,6 +302,25 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
                     board[index] = -n;
                     board[selectedIndex] = -selected;
 
+                    bool stillExists = false;
+                    bool selectedStillExists = false;
+                    for (usize i = 0; i < lastIndex; i++) {
+                        i8 value = board[i];
+                        if (!stillExists && value == n) {
+                            stillExists = true;
+                        }
+                        if (!selectedStillExists && value == selected) {
+                            selectedStillExists = true;
+                        }
+                        if (stillExists && selectedStillExists) break;
+                    }
+                    if (!stillExists) {
+                        completed |= (1 << (n - 1));
+                    }
+                    if (!selectedStillExists) {
+                        completed |= (1 << (selected - 1));
+                    }
+
                     usize selectedRow = ROW_FROM_INDEX(selectedIndex);
                     usize lastRow = MAX(selectedRow, row);
                     usize firstRow = MIN(selectedRow, row);
@@ -294,12 +355,25 @@ static void GuiAddSlotsButton(Vector2 mouse) {
         for (usize i = 0; i < lastIndex; i++) {
             if (board[i] > 0) count++;
         }
+        u8 availableCount = MAX_VALUE - BITCOUNT(completed);
         usize newSlots = MIN(count, BOARD_SIZE - lastIndex - 1);
         for (usize i = 0; i < newSlots; i++) {
             // TODO: only add available values
-            board[++lastIndex] = RANDOM_VALUE();
+            board[++lastIndex] = RandomValue(availableCount);
         }
     }
+}
+
+// TODO:
+// generate an even share of all numbers and make sure to generate them all!
+static u8 RandomValue(u8 availableCount) {
+    u8 n = (((u8)rand()) % availableCount);
+    i8 available = -1;
+    for (u8 i = 0; i < MAX_VALUE; i++) {
+        if (!(completed & (1 << i))) available++;
+        if (available == n) return i + 1;
+    }
+    UNREACHABLE("n should be within the available range");
 }
 
 static void ClearRowIfNeeded(usize row) {
