@@ -12,6 +12,10 @@ typedef u32 bitset128[4];
 typedef int8_t i8;
 typedef size_t usize;
 
+// Add `printf` checking for `TraceLog`
+void TraceLog(int logLevel, const char *text, ...)
+    __attribute__((format(printf, 2, 3)));
+
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ABS(n)    ((n) < 0 ? -(n) : (n))
