@@ -6,6 +6,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "./inter.c"
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -71,7 +73,7 @@ static usize CustomBitcount(usize n) {
 #define SLOT_WIDTH          50
 #define SLOT_HEIGHT         SLOT_WIDTH
 #define SLOT_GAP            10
-#define FONT_SIZE           16
+#define FONT_SIZE           20
 #define BOARD_WIDTH         ((SLOT_WIDTH * COL_COUNT) + (SLOT_GAP * (COL_COUNT + 1)))
 #define INITIAL_X           ((WINDOW_WIDTH / 2) - (BOARD_WIDTH / 2))
 #define INITIAL_Y           SLOT_GAP
@@ -96,6 +98,7 @@ const Vector2 BADGE_CENTER = {
     ADD_SLOTS_BUTTON_CENTER.x + BUTTON_RADIUS - BADGE_CENTER_X,
     ADD_SLOTS_BUTTON_CENTER.y - BUTTON_RADIUS + BADGE_CENTER_X};
 
+Font font;
 Vector2 NUMBER_MEASURES[MAX_VALUE + 1] = {0};
 Vector2 PLUS_MEASURE = {0};
 Vector2 COMPLETED_MEASURE = {0};
@@ -145,7 +148,8 @@ int main(int argc, const char **argv) {
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Number Match");
 
-    Font font = GetFontDefault();
+    font = LoadFont_Inter();
+
     for (usize i = 0; i < MAX_VALUE + 1; i++) {
         NUMBER_MEASURES[i] =
             MeasureTextEx(font, GetNumberText(i), FONT_SIZE, 0);
@@ -192,8 +196,10 @@ int main(int argc, const char **argv) {
                     measure = NUMBER_MEASURES[n];
                 }
                 int textMidX = (measure.x / 2);
-                DrawText(text, INITIAL_X + BOARD_WIDTH + 10 - textMidX,
-                         WINDOW_MID_Y / 2 + (i * 20), FONT_SIZE, WHITE);
+                int x = INITIAL_X + BOARD_WIDTH + 10 - textMidX;
+                int y = WINDOW_MID_Y / 2 + (i * 20);
+                Vector2 pos = {x, y};
+                DrawTextEx(font, text, pos, FONT_SIZE, 0, WHITE);
             }
         }
         EndDrawing();
@@ -282,9 +288,10 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
 
     if (n) {
         Vector2 measure = NUMBER_MEASURES[ABS(n)];
-        DrawText(GetNumberText(n), x + SLOT_MID_X - (measure.x / 2),
-                 y + SLOT_MID_Y - (measure.y / 2), FONT_SIZE,
-                 n < 0 ? LIGHTGRAY : BLACK);
+        Vector2 pos = {x + SLOT_MID_X - (measure.x / 2),
+                       y + SLOT_MID_Y - (measure.y / 2)};
+        DrawTextEx(font, GetNumberText(n), pos, FONT_SIZE, 0,
+                   n < 0 ? LIGHTGRAY : BLACK);
 
         if (BITSET128_ANY(blocking)) return;
 
@@ -337,13 +344,15 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
 static void GuiAddSlotsButton(Vector2 mouse) {
     DrawCircleV(ADD_SLOTS_BUTTON_CENTER, BUTTON_RADIUS,
                 !adds ? LIGHTGRAY : WHITE);
-    DrawText(PLUS, ADD_SLOTS_BUTTON_CENTER.x - PLUS_MEASURE.x / 2,
-             ADD_SLOTS_BUTTON_CENTER.y - PLUS_MEASURE.y / 2, PLUS_FONT_SIZE,
-             BLACK);
+    Vector2 pos = {ADD_SLOTS_BUTTON_CENTER.x - PLUS_MEASURE.x / 2,
+                   ADD_SLOTS_BUTTON_CENTER.y - PLUS_MEASURE.y / 2};
+    DrawTextEx(font, PLUS, pos, PLUS_FONT_SIZE, 0, BLACK);
+
     DrawCircleV(BADGE_CENTER, BADGE_RADIUS, !adds ? GRAY : SKYBLUE);
     Vector2 measure = NUMBER_MEASURES[adds];
-    DrawText(GetNumberText(adds), BADGE_CENTER.x - (measure.x / 2),
-             BADGE_CENTER.y - (measure.y / 2), FONT_SIZE, BLACK);
+    pos.x = BADGE_CENTER.x - (measure.x / 2);
+    pos.y = BADGE_CENTER.y - (measure.y / 2);
+    DrawTextEx(font, GetNumberText(adds), pos, FONT_SIZE, 0, BLACK);
 
     if (adds &&
         CheckCollisionPointCircle(mouse, ADD_SLOTS_BUTTON_CENTER,
