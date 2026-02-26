@@ -105,7 +105,7 @@ Vector2 COMPLETED_MEASURE = {0};
 
 static u8 adds = 5;
 static i8 board[BOARD_SIZE] = {0};
-static usize lastIndex = 0;
+static usize slotsCount = 0;
 static usize selectedIndex = NO_INDEX;
 static_assert(BOARD_SIZE <= 128, "board too large for 128 bitset of indexes");
 static bitset128 blocking = {0};
@@ -120,7 +120,6 @@ static bool CanMatch(usize index, usize col, usize row);
 static void ClearRowIfNeeded(usize row);
 static void GuiSlot(usize row, usize col, Vector2 mouse);
 static void GuiAddSlotsButton(Vector2 mouse);
-static u8 RandomValue(u8 availableCount);
 
 int main(int argc, const char **argv) {
     int seed = time(NULL);
@@ -140,10 +139,24 @@ int main(int argc, const char **argv) {
     TraceLog(LOG_INFO, "RANDOM: seed = %#x", seed);
     srand(seed);
 
-    lastIndex = INITIAL_SLOTS - 1;
-    u8 availableCount = MAX_VALUE - BITCOUNT(completed);
-    for (usize i = 0; i <= lastIndex; i++) {
-        board[i] = RandomValue(availableCount);
+    usize nonAssignable = completed;
+    for (usize i = 0; i < INITIAL_SLOTS; i++) {
+        usize availableCount = (MAX_VALUE - BITCOUNT(nonAssignable));
+        u8 n = ((u8)rand()) % availableCount;
+        i8 available = -1;
+        for (u8 i = 0; i < MAX_VALUE; i++) {
+            if (!(nonAssignable & (1 << i))) available++;
+            if (available == n) {
+                u8 value = i + 1;
+                board[slotsCount++] = value;
+                if (rand() % 2 == 0) {
+                    nonAssignable ^= 1 << i;
+                    if (nonAssignable == ((1 << MAX_VALUE) - 1))
+                        nonAssignable = completed;
+                }
+                break;
+            }
+        }
     }
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Number Match");
@@ -311,7 +324,7 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
 
                     bool stillExists = false;
                     bool selectedStillExists = false;
-                    for (usize i = 0; i < lastIndex; i++) {
+                    for (usize i = 0; i < slotsCount; i++) {
                         i8 value = board[i];
                         if (!stillExists && value == n) {
                             stillExists = true;
@@ -361,32 +374,23 @@ static void GuiAddSlotsButton(Vector2 mouse) {
         adds -= 1;
 
         usize count = 0;
-        for (usize i = 0; i < lastIndex; i++) {
+        for (usize i = 0; i < slotsCount; i++) {
             if (board[i] > 0) count++;
         }
-        u8 availableCount = MAX_VALUE - BITCOUNT(completed);
-        usize newSlots = MIN(count, BOARD_SIZE - lastIndex - 1);
+        usize newSlots = MIN(count, BOARD_SIZE - slotsCount - 1);
+
+        usize index = 0;
         for (usize i = 0; i < newSlots; i++) {
-            // TODO: only add available values
-            board[++lastIndex] = RandomValue(availableCount);
+            board[slotsCount++] = board[index];
+            do {
+                index++;
+            } while (board[index] <= 0);
         }
     }
-}
-
-// TODO:
-// generate an even share of all numbers and make sure to generate them all!
-static u8 RandomValue(u8 availableCount) {
-    u8 n = (((u8)rand()) % availableCount);
-    i8 available = -1;
-    for (u8 i = 0; i < MAX_VALUE; i++) {
-        if (!(completed & (1 << i))) available++;
-        if (available == n) return i + 1;
-    }
-    UNREACHABLE("n should be within the available range");
 }
 
 static void ClearRowIfNeeded(usize row) {
-    usize lastRow = ROW_FROM_INDEX(lastIndex);
+    usize lastRow = ROW_FROM_INDEX(slotsCount - 1);
 
     if (row == lastRow) return;
 
@@ -404,5 +408,5 @@ static void ClearRowIfNeeded(usize row) {
         board[INDEX_FROM_POS(lastRow, col)] = 0;
     }
 
-    lastIndex -= COL_COUNT;
+    slotsCount -= COL_COUNT;
 }
