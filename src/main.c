@@ -59,6 +59,12 @@ static usize CustomBitcount(usize n) {
         (bset)[3] = 0;                                                         \
     } while (0)
 
+typedef enum {
+    ANIMATION_NONE = 0,
+    ANIMATION_MATCHING,
+    ANIMATION_BLOCKING
+} Animation_Kind;
+
 #define MAX_VALUE           9
 #define JOINED_VALUE        10
 #define COL_COUNT           9
@@ -75,7 +81,6 @@ static usize CustomBitcount(usize n) {
 #define SLOT_GAP            10
 #define FONT_SIZE           20
 #define BOARD_WIDTH         ((SLOT_WIDTH * COL_COUNT) + (SLOT_GAP * (COL_COUNT + 1)))
-#define INITIAL_X           ((WINDOW_WIDTH / 2) - (BOARD_WIDTH / 2))
 #define INITIAL_Y           SLOT_GAP
 #define BUTTON_RADIUS       30.0
 #define BADGE_RADIUS        15
@@ -87,6 +92,7 @@ static usize CustomBitcount(usize n) {
 #define COL_FROM_INDEX(index)    ((index) % COL_COUNT)
 #define INDEX_FROM_POS(row, col) (((row) * COL_COUNT) + (col))
 
+const int INITIAL_X = ((WINDOW_WIDTH / 2) - (BOARD_WIDTH / 2));
 const int SLOT_MID_X = SLOT_WIDTH / 2;
 const int SLOT_MID_Y = SLOT_HEIGHT / 2;
 const int WINDOW_MID_Y = WINDOW_HEIGHT / 2;
@@ -109,12 +115,16 @@ static usize slotsCount = 0;
 static usize selectedIndex = NO_INDEX;
 static_assert(BOARD_SIZE <= 128, "board too large for 128 bitset of indexes");
 static bitset128 blocking = {0};
+static bool matchMultiRow = false;
+static usize matches[2] = {NO_INDEX, NO_INDEX};
 static u16 completed = 0;
 
-#define BLOCKING_ANIMATION_FRAMES 120
+#define ANIMATION_FRAMES 240
+static usize animationFrame = 0;
 
-static usize blockingAnimationFrame = 0;
-
+static Vector2 CenterFromIndex(usize index);
+static Vector2 EndOfRow(usize index);
+static Vector2 StartOfRow(usize index);
 static char *GetNumberText(i8 n);
 static bool CanMatch(usize index, usize col, usize row);
 static void ClearRowIfNeeded(usize row);
@@ -175,12 +185,19 @@ int main(int argc, const char **argv) {
         {
             ClearBackground(BLACK);
 
-            if (BITSET128_ANY(blocking)) {
-                if (blockingAnimationFrame < BLOCKING_ANIMATION_FRAMES) {
-                    blockingAnimationFrame++;
+            Animation_Kind animation = matches[0] != NO_INDEX ?
+                ANIMATION_MATCHING :
+                BITSET128_ANY(blocking) ? ANIMATION_BLOCKING :
+                                          ANIMATION_NONE;
+
+            if (animation) {
+                if (animationFrame < ANIMATION_FRAMES) {
+                    animationFrame++;
                 } else {
-                    blockingAnimationFrame = 0;
+                    animationFrame = 0;
                     BITSET128_CLEAR(blocking);
+                    matches[0] = NO_INDEX;
+                    matches[1] = NO_INDEX;
                 }
             }
 
@@ -190,6 +207,19 @@ int main(int argc, const char **argv) {
             for (usize row = 0; row < ROW_COUNT; row++) {
                 for (usize col = 0; col < COL_COUNT; col++) {
                     GuiSlot(row, col, mouse);
+                }
+            }
+
+            if (animation == ANIMATION_MATCHING &&
+                animationFrame < ANIMATION_FRAMES) {
+                if (matchMultiRow) {
+                    DrawLineEx(CenterFromIndex(matches[0]),
+                               EndOfRow(matches[0]), 3, SKYBLUE);
+                    DrawLineEx(CenterFromIndex(matches[1]),
+                               StartOfRow(matches[1]), 3, SKYBLUE);
+                } else {
+                    DrawLineEx(CenterFromIndex(matches[0]),
+                               CenterFromIndex(matches[1]), 3, SKYBLUE);
                 }
             }
 
@@ -223,6 +253,36 @@ int main(int argc, const char **argv) {
     return 0;
 }
 
+static Vector2 CenterFromIndex(usize index) {
+    usize col = COL_FROM_INDEX(index);
+    usize row = ROW_FROM_INDEX(index);
+    Vector2 ret = {0};
+    ret.x =
+        INITIAL_X + col * (SLOT_WIDTH + (col == 0 ? 0 : SLOT_GAP)) + SLOT_MID_X;
+    ret.y = INITIAL_Y + row * (SLOT_HEIGHT + (row == 0 ? 0 : SLOT_GAP)) +
+        SLOT_MID_Y;
+    return ret;
+}
+
+static Vector2 EndOfRow(usize index) {
+    usize row = ROW_FROM_INDEX(index);
+    Vector2 ret = {0};
+    ret.x =
+        INITIAL_X + ((COL_COUNT - 1) * (SLOT_WIDTH + SLOT_GAP)) + (SLOT_WIDTH);
+    ret.y = INITIAL_Y + row * (SLOT_HEIGHT + (row == 0 ? 0 : SLOT_GAP)) +
+        SLOT_MID_Y;
+    return ret;
+}
+
+static Vector2 StartOfRow(usize index) {
+    usize row = ROW_FROM_INDEX(index);
+    Vector2 ret = {0};
+    ret.x = INITIAL_X;
+    ret.y = INITIAL_Y + row * (SLOT_HEIGHT + (row == 0 ? 0 : SLOT_GAP)) +
+        SLOT_MID_Y;
+    return ret;
+}
+
 static char *GetNumberText(i8 n) {
     switch (ABS(n)) {
     case 0:  return "0";
@@ -240,7 +300,9 @@ static char *GetNumberText(i8 n) {
 }
 
 static bool CanMatch(usize index, usize row, usize col) {
+    // TODO: do we need this reset?
     BITSET128_CLEAR(blocking);
+    matchMultiRow = false;
 
     usize selectedRow = ROW_FROM_INDEX(selectedIndex);
     usize selectedCol = COL_FROM_INDEX(selectedIndex);
@@ -251,7 +313,13 @@ static bool CanMatch(usize index, usize row, usize col) {
             usize currentIndex = INDEX_FROM_POS(i, col);
             if (board[currentIndex] > 0) BITSET128_SET(blocking, currentIndex);
         }
-        return !BITSET128_ANY(blocking);
+        if (!BITSET128_ANY(blocking)) {
+            matches[0] = index;
+            matches[1] = selectedIndex;
+            return true;
+        } else {
+            return false;
+        }
     }
 
     usize start = MIN(index, selectedIndex);
@@ -259,7 +327,12 @@ static bool CanMatch(usize index, usize row, usize col) {
     for (usize i = start + 1; i < end; i++) {
         if (board[i] > 0) BITSET128_SET(blocking, i);
     }
-    if (!BITSET128_ANY(blocking)) return true;
+    if (!BITSET128_ANY(blocking)) {
+        matchMultiRow = row != selectedRow;
+        matches[0] = start;
+        matches[1] = end;
+        return true;
+    }
 
     usize startRow = ROW_FROM_INDEX(start);
     usize startCol = COL_FROM_INDEX(start);
@@ -278,7 +351,13 @@ static bool CanMatch(usize index, usize row, usize col) {
         usize currentIndex = INDEX_FROM_POS(i, startCol + offset);
         if (board[currentIndex] > 0) BITSET128_SET(blocking, currentIndex);
     }
-    return !BITSET128_ANY(blocking);
+    if (!BITSET128_ANY(blocking)) {
+        matches[0] = index;
+        matches[1] = selectedIndex;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 static void GuiSlot(usize row, usize col, Vector2 mouse) {
@@ -289,8 +368,8 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
 
     // TODO: add animation for making a match
     if (BITSET128_GET(blocking, index)) {
-        usize middle = BLOCKING_ANIMATION_FRAMES / 2;
-        x += (blockingAnimationFrame < middle ? 1 : -1) * (SLOT_GAP / 2);
+        usize middle = ANIMATION_FRAMES / 2;
+        x += (animationFrame < middle ? 1 : -1) * (SLOT_GAP / 2);
     }
 
     usize y = INITIAL_Y + row * (SLOT_HEIGHT + (row == 0 ? 0 : SLOT_GAP));
@@ -300,9 +379,15 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
     DrawRectangleRec(bounds, index == selectedIndex ? SKYBLUE : WHITE);
 
     if (n) {
+        usize centerX = x + SLOT_MID_X;
+        usize centerY = y + SLOT_MID_Y;
+
+        if (matches[0] == index || matches[1] == index) {
+            DrawCircle(centerX, centerY, SLOT_MID_Y - 3, SKYBLUE);
+        }
+
         Vector2 measure = NUMBER_MEASURES[ABS(n)];
-        Vector2 pos = {x + SLOT_MID_X - (measure.x / 2),
-                       y + SLOT_MID_Y - (measure.y / 2)};
+        Vector2 pos = {centerX - (measure.x / 2), centerY - (measure.y / 2)};
         DrawTextEx(font, GetNumberText(n), pos, FONT_SIZE, 0,
                    n < 0 ? LIGHTGRAY : BLACK);
 
