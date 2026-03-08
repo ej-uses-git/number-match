@@ -62,8 +62,14 @@ static usize CustomBitcount(usize n) {
 typedef enum {
     ANIMATION_NONE = 0,
     ANIMATION_MATCHING,
-    ANIMATION_BLOCKING
+    ANIMATION_BLOCKING,
+    ANIMATION_HINT,
+    ANIMATION_HINT_ADD_SLOTS,
 } Animation_Kind;
+
+typedef struct Hint {
+    usize indexes[2];
+} Hint;
 
 #define MAX_VALUE           9
 #define JOINED_VALUE        10
@@ -86,6 +92,8 @@ typedef enum {
 #define BADGE_RADIUS        15
 #define PLUS_FONT_SIZE      32
 #define PLUS                "+"
+#define HINT_FONT_SIZE      24
+#define HINT                "Hint"
 #define COMPLETED           "-"
 
 #define ROW_FROM_INDEX(index)    ((index) / COL_COUNT)
@@ -99,14 +107,13 @@ const int WINDOW_MID_Y = WINDOW_HEIGHT / 2;
 const int BUTTON_CENTER_X = INITIAL_X / 2;
 const int BADGE_CENTER_X = (BADGE_RADIUS / 2);
 
-const Vector2 ADD_SLOTS_BUTTON_CENTER = {BUTTON_CENTER_X, WINDOW_MID_Y};
-const Vector2 BADGE_CENTER = {
-    ADD_SLOTS_BUTTON_CENTER.x + BUTTON_RADIUS - BADGE_CENTER_X,
-    ADD_SLOTS_BUTTON_CENTER.y - BUTTON_RADIUS + BADGE_CENTER_X};
+const Vector2 HINT_BUTTON_CENTER = {BUTTON_CENTER_X,
+                                    WINDOW_MID_Y + BUTTON_RADIUS + SLOT_GAP};
 
 Font font;
 Vector2 NUMBER_MEASURES[MAX_VALUE + 1] = {0};
 Vector2 PLUS_MEASURE = {0};
+Vector2 HINT_MEASURE = {0};
 Vector2 COMPLETED_MEASURE = {0};
 
 static u8 adds = 5;
@@ -117,6 +124,8 @@ static_assert(BOARD_SIZE <= 128, "board too large for 128 bitset of indexes");
 static bitset128 blocking = {0};
 static bool matchMultiRow = false;
 static usize matches[2] = {NO_INDEX, NO_INDEX};
+static bool hintAddSlots = false;
+static usize hinted[2] = {NO_INDEX, NO_INDEX};
 static u16 completed = 0;
 
 #define ANIMATION_FRAMES 240
@@ -127,9 +136,11 @@ static Vector2 EndOfRow(usize index);
 static Vector2 StartOfRow(usize index);
 static char *GetNumberText(i8 n);
 static bool CanMatch(usize index, usize col, usize row);
+static Hint GetHint(void);
 static void ClearRowIfNeeded(usize row);
 static void GuiSlot(usize row, usize col, Vector2 mouse);
-static void GuiAddSlotsButton(Vector2 mouse);
+static void GuiAddSlotsButton(Vector2 mouse, bool hint);
+static void GuiHintButton(Vector2 mouse);
 
 int main(int argc, const char **argv) {
     int seed = time(NULL);
@@ -178,6 +189,7 @@ int main(int argc, const char **argv) {
             MeasureTextEx(font, GetNumberText(i), FONT_SIZE, 0);
     }
     PLUS_MEASURE = MeasureTextEx(font, PLUS, PLUS_FONT_SIZE, 0);
+    HINT_MEASURE = MeasureTextEx(font, HINT, HINT_FONT_SIZE, 0);
     COMPLETED_MEASURE = MeasureTextEx(font, COMPLETED, FONT_SIZE, 0);
 
     while (!WindowShouldClose()) {
@@ -185,19 +197,29 @@ int main(int argc, const char **argv) {
         {
             ClearBackground(BLACK);
 
-            Animation_Kind animation = matches[0] != NO_INDEX ?
-                ANIMATION_MATCHING :
-                BITSET128_ANY(blocking) ? ANIMATION_BLOCKING :
-                                          ANIMATION_NONE;
+            Animation_Kind animation = ANIMATION_NONE;
+            if (matches[0] != NO_INDEX) {
+                animation = ANIMATION_MATCHING;
+            } else if (hintAddSlots) {
+                animation = ANIMATION_HINT_ADD_SLOTS;
+            } else if (hinted[0] != NO_INDEX) {
+                animation = ANIMATION_HINT;
+            } else if (BITSET128_ANY(blocking)) {
+                animation = ANIMATION_BLOCKING;
+            }
 
-            if (animation) {
+            if (animation != ANIMATION_NONE) {
                 if (animationFrame < ANIMATION_FRAMES) {
                     animationFrame++;
                 } else {
                     animationFrame = 0;
                     BITSET128_CLEAR(blocking);
+                    hintAddSlots = false;
+                    matchMultiRow = false;
                     matches[0] = NO_INDEX;
                     matches[1] = NO_INDEX;
+                    hinted[0] = NO_INDEX;
+                    hinted[1] = NO_INDEX;
                 }
             }
 
@@ -223,9 +245,8 @@ int main(int argc, const char **argv) {
                 }
             }
 
-            GuiAddSlotsButton(mouse);
-
-            // TODO: show hint button
+            GuiAddSlotsButton(mouse, animation == ANIMATION_HINT_ADD_SLOTS);
+            GuiHintButton(mouse);
 
             for (usize i = 0; i < MAX_VALUE; i++) {
                 i8 n = i + 1;
@@ -360,6 +381,71 @@ static bool CanMatch(usize index, usize row, usize col) {
     }
 }
 
+static Hint GetHint(void) {
+    hintAddSlots = false;
+
+    Hint hint = {.indexes = {NO_INDEX, NO_INDEX}};
+
+    usize lastRow = ROW_FROM_INDEX(slotsCount - 1);
+    for (usize i = 0; i < slotsCount; i++) {
+        i8 n = board[i];
+        if (n <= 0) continue;
+
+        usize row = ROW_FROM_INDEX(i);
+        usize col = COL_FROM_INDEX(i);
+
+        for (usize currentRow = row + 1; currentRow <= lastRow; currentRow++) {
+            usize currentIndex = INDEX_FROM_POS(currentRow, col);
+            i8 value = board[currentIndex];
+            if (value <= 0) continue;
+            if (value != n && value + n != JOINED_VALUE) break;
+
+            hint.indexes[0] = i;
+            hint.indexes[1] = currentIndex;
+            return hint;
+        }
+
+        for (usize currentIndex = i + 1; i < slotsCount; currentIndex++) {
+            if (currentIndex >= slotsCount) break;
+            i8 value = board[currentIndex];
+            if (value <= 0) continue;
+            if (value != n && value + n != JOINED_VALUE) break;
+
+            hint.indexes[0] = i;
+            hint.indexes[1] = currentIndex;
+            return hint;
+        }
+
+        for (usize currentRow = row + 1, offset = 1; currentRow <= lastRow;
+             currentRow++, offset++) {
+            if (col + offset >= COL_COUNT) break;
+            usize currentIndex = INDEX_FROM_POS(currentRow, col + offset);
+            i8 value = board[currentIndex];
+            if (value <= 0) continue;
+            if (value != n && value + n != JOINED_VALUE) break;
+
+            hint.indexes[0] = i;
+            hint.indexes[1] = currentIndex;
+            return hint;
+        }
+
+        for (usize currentRow = row + 1, offset = 1; currentRow <= lastRow;
+             currentRow++, offset++) {
+            if (col < offset) break;
+            usize currentIndex = INDEX_FROM_POS(currentRow, col - offset);
+            i8 value = board[currentIndex];
+            if (value <= 0) continue;
+            if (value != n && value + n != JOINED_VALUE) break;
+
+            hint.indexes[0] = i;
+            hint.indexes[1] = currentIndex;
+            return hint;
+        }
+    }
+
+    return hint;
+}
+
 static void GuiSlot(usize row, usize col, Vector2 mouse) {
     usize index = INDEX_FROM_POS(row, col);
     i8 n = board[index];
@@ -376,7 +462,11 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
 
     Rectangle bounds = {x, y, SLOT_WIDTH, SLOT_HEIGHT};
 
-    DrawRectangleRec(bounds, index == selectedIndex ? SKYBLUE : WHITE);
+    Color bgColor = index == selectedIndex ? SKYBLUE : WHITE;
+    if (hinted[0] == index || hinted[1] == index) {
+        bgColor = LIGHTGRAY;
+    }
+    DrawRectangleRec(bounds, bgColor);
 
     if (n) {
         usize centerX = x + SLOT_MID_X;
@@ -439,22 +529,30 @@ static void GuiSlot(usize row, usize col, Vector2 mouse) {
     }
 }
 
-static void GuiAddSlotsButton(Vector2 mouse) {
-    DrawCircleV(ADD_SLOTS_BUTTON_CENTER, BUTTON_RADIUS,
-                !adds ? LIGHTGRAY : WHITE);
-    Vector2 pos = {ADD_SLOTS_BUTTON_CENTER.x - PLUS_MEASURE.x / 2,
-                   ADD_SLOTS_BUTTON_CENTER.y - PLUS_MEASURE.y / 2};
+static void GuiAddSlotsButton(Vector2 mouse, bool hint) {
+    Vector2 addSlotsButtonCenter = {BUTTON_CENTER_X,
+                                    WINDOW_MID_Y - BUTTON_RADIUS - SLOT_GAP};
+    if (hint) {
+        usize middle = ANIMATION_FRAMES / 2;
+        addSlotsButtonCenter.x +=
+            (animationFrame < middle ? 1 : -1) * (SLOT_GAP / 2);
+    }
+    DrawCircleV(addSlotsButtonCenter, BUTTON_RADIUS, !adds ? LIGHTGRAY : WHITE);
+    Vector2 pos = {addSlotsButtonCenter.x - PLUS_MEASURE.x / 2,
+                   addSlotsButtonCenter.y - PLUS_MEASURE.y / 2};
     DrawTextEx(font, PLUS, pos, PLUS_FONT_SIZE, 0, BLACK);
 
-    DrawCircleV(BADGE_CENTER, BADGE_RADIUS, !adds ? GRAY : SKYBLUE);
+    Vector2 badgeCenter = {
+        addSlotsButtonCenter.x + BUTTON_RADIUS - BADGE_CENTER_X,
+        addSlotsButtonCenter.y - BUTTON_RADIUS + BADGE_CENTER_X};
+    DrawCircleV(badgeCenter, BADGE_RADIUS, !adds ? GRAY : SKYBLUE);
     Vector2 measure = NUMBER_MEASURES[adds];
-    pos.x = BADGE_CENTER.x - (measure.x / 2);
-    pos.y = BADGE_CENTER.y - (measure.y / 2);
+    pos.x = badgeCenter.x - (measure.x / 2);
+    pos.y = badgeCenter.y - (measure.y / 2);
     DrawTextEx(font, GetNumberText(adds), pos, FONT_SIZE, 0, BLACK);
 
     if (adds &&
-        CheckCollisionPointCircle(mouse, ADD_SLOTS_BUTTON_CENTER,
-                                  BUTTON_RADIUS) &&
+        CheckCollisionPointCircle(mouse, addSlotsButtonCenter, BUTTON_RADIUS) &&
         IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
         adds -= 1;
 
@@ -470,6 +568,24 @@ static void GuiAddSlotsButton(Vector2 mouse) {
             do {
                 index++;
             } while (board[index] <= 0);
+        }
+    }
+}
+
+static void GuiHintButton(Vector2 mouse) {
+    DrawCircleV(HINT_BUTTON_CENTER, BUTTON_RADIUS, WHITE);
+    Vector2 pos = {HINT_BUTTON_CENTER.x - HINT_MEASURE.x / 2,
+                   HINT_BUTTON_CENTER.y - HINT_MEASURE.y / 2};
+    DrawTextEx(font, HINT, pos, HINT_FONT_SIZE, 0, BLACK);
+
+    if (CheckCollisionPointCircle(mouse, HINT_BUTTON_CENTER, BUTTON_RADIUS) &&
+        IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        Hint hint = GetHint();
+        if (hint.indexes[0] == NO_INDEX) {
+            hintAddSlots = true;
+        } else {
+            hinted[0] = hint.indexes[0];
+            hinted[1] = hint.indexes[1];
         }
     }
 }
